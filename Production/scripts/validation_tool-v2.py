@@ -2,8 +2,6 @@ from __future__ import print_function
 import sys; PYTHON_MAJOR = int(sys.version_info.major)
 dict_iterator = 'items' if PYTHON_MAJOR == 3 else 'iteritems'
 
-from multiprocessing import Process
-
 import ROOT
 import glob
 import json
@@ -166,19 +164,12 @@ if __name__ == '__main__':
     sub_entries_st ['tau_pt'] + sub_entries_st ['tau_eta'] +\
     sub_entries_di ['tau_pt'] + sub_entries_di ['tau_eta'] +\
     sub_entries_dgi['tau_pt'] + sub_entries_dgi['tau_eta'] 
-  import pdb; pdb.set_trace()
+
   for ee in entries:
     ee.load_hpointers()
 
-  procs = []
   for ee in entries:
-    procs.append(Process(target = ee.load_histograms))
-  
-  for pp in procs:
-    pp.start()
-  
-  for pp in procs:
-    pp.join()
+    ee.load_histograms()
   
   for ee in entries:
     ee.run_KS_test()
