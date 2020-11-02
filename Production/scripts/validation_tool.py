@@ -14,7 +14,7 @@ from collections import OrderedDict
 
 parser.add_argument('--input'       , required = True, type = str, help = 'input file. Accepts glob patterns (use quotes)')
 parser.add_argument('--output'      , required = True, type = str, help = 'output directory name')
-parser.add_argument('--nsplit'      , default  = 100 , type = str, help = 'number of chunks per file')
+parser.add_argument('--nsplit'      , default  = 100 , type = int, help = 'number of chunks per file')
 parser.add_argument('--pvthreshold' , default  = .05 , type = str, help = 'threshold of KS test (above = ok)')
 
 parser.add_argument('--visual', action = 'store_true', help = 'Won\'t run the script in batch mode')
@@ -154,4 +154,5 @@ if __name__ == '__main__':
 
   OUTPUT_ROOT.Close()
   json.dump(JSON_DICT, OUTPUT_JSON, indent = 4)
-  print ('[INFO] all done. Files', args.output, 'and', args.json, 'have been created')
+  print ('[INFO] all done. Files saved in', args.output)
+  print 'RDataFrame was run', dataframe.GetNRuns(), 'times'

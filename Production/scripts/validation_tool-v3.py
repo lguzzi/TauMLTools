@@ -20,6 +20,7 @@ parser.add_argument('--input'       , required = True, type = str, help = 'input
 parser.add_argument('--output'      , required = True, type = str, help = 'output directory name')
 parser.add_argument('--nsplit'      , default  = 100 , type = int, help = 'number of chunks per file')
 parser.add_argument('--pvthreshold' , default  = .05 , type = str, help = 'threshold of KS test (above = ok)')
+parser.add_argument('--n_threads'   , default  = 1   , type = int, help = 'enable ROOT implicit multithreading')
 
 parser.add_argument('--visual', action = 'store_true', help = 'Won\'t run the script in batch mode')
 parser.add_argument('--legend', action = 'store_true', help = 'Draw a TLegent on canvases')
@@ -54,33 +55,41 @@ class Entry:
     self.var      = var
     self.dframe   = dataframe
     self.tdir     = '/'.join([bin_dir, self.var]) if not bin_dir is None else self.var
-    self.hptrs    = []
+    self.hptr     = None
     self.histos   = []
     self.pvalues  = []
+    self.nev      = self.dframe.Count()
   
   def load_hpointers(self):
-    size = self.dframe.Count().GetValue()
-    sub_size = 1 + size // N_SPLITS
-    subframes = [self.dframe.Range(ii*sub_size, (ii+1)*sub_size) for ii in range(N_SPLITS)]
-    model = (self.var, '') + BINS[self.var]
-    self.hptrs = [sf.Histo1D(model, self.var) for sf in subframes]
+    self.dframe = self.dframe.Define('chunk_id', 'rdfentry_ % {}'.format(N_SPLITS))
+    model = (self.var, '') + (N_SPLITS, 0, N_SPLITS) + BINS[self.var]
+    self.hptr = self.dframe.Histo2D(model, 'chunk_id', self.var)
   
   def load_histograms(self, norm = True):
-    self.histos = [hh.GetValue() for hh in self.hptrs]
+    if not self.nev.GetValue():
+      return False
+    
+    histo2D = self.hptr.GetValue()
+    self.histos = [histo2D.ProjectionY('chunk_{}'.format(jj), jj+1, jj+1) for jj in range(N_SPLITS)]
+    self.histos = [hh for hh in self.histos if hh.Integral()]
+    
+    if not len(self.histos):
+      return False
     
     self.histos[0].SetMarkerStyle(20)
     for jj, hh in enumerate(self.histos):
-      hh.SetName(hh.GetName()+str(jj))
       hh.SetTitle(self.tdir)
       hh.Sumw2()
       hh.SetLineColor(jj+1)
-      if hh.GetIntegral() and norm:
+      if norm:
         hh.Scale(1. / hh.Integral())
+    
+    return True
       
   def run_KS_test(self):
     self.pvalues = [self.histos[0].KolmogorovTest(hh) if self.histos[0].Integral()*hh.Integral() else 99 for hh in self.histos]
     if not self.histos[0].Integral():
-      print ('[WARNING] control histogram is empty for step {} inside {}'.format(branch, pwd))
+      print ('[WARNING] control histogram is empty inside {}'.format(self.tdir))
     
     if not all([pv >= PVAL_THRESHOLD for pv in self.pvalues]):
       print ('[WARNING] KS test failed for step {}. p-values are:'.format(self.tdir))
@@ -117,17 +126,14 @@ class Entry:
 
 
 def groupby(dataframe, by):
-  _ = dataframe.Histo1D(by)
-  hist = _.GetValue()
-  hist.ClearUnderflowAndOverflow()
-  types = list(set([round(hist.GetBinCenter(jj)) for jj in range(hist.GetNbinsX()) if hist.GetBinContent(jj)]))
-  types = [int(tt) for tt in types]
-
-  return {tt: dataframe.Filter('{} == {}'.format(by, tt)) for tt in types}
+  return {tt: dataframe.Filter('{} == {}'.format(by, tt)) for tt in range(*BINS[by][1:])}
 
 if __name__ == '__main__':
   print ('[INFO] reading files', args.input)
   
+  if args.n_threads > 1:
+    ROOT.ROOT.EnableImplicitMT(args.n_threads)
+
   input_files = ROOT.std.vector('std::string')()
   
   for file in glob.glob(args.input):
@@ -165,19 +171,14 @@ if __name__ == '__main__':
     sub_entries_di ['tau_pt'] + sub_entries_di ['tau_eta'] +\
     sub_entries_dgi['tau_pt'] + sub_entries_dgi['tau_eta'] 
 
-  #for ee in entries:
-  #  ee.load_hpointers()
+  for ee in entries:
+    ee.load_hpointers()
 
-  #for ee in entries:
-  #  ee.load_histograms()
-  
-  #for ee in entries:
-  #  ee.run_KS_test()
-  
-  #for ee in entries:
-  #  ee.save_data()
-  
+  for ee in entries:
+    if ee.load_histograms():
+      ee.run_KS_test()
+      ee.save_data()
+
   OUTPUT_ROOT.Close()
   json.dump(JSON_DICT, OUTPUT_JSON, indent = 4)
   print ('[INFO] all done. Files saved in', args.output)
-  print ('RDataFrame was run', dataframe.GetNRuns(), 'times')
